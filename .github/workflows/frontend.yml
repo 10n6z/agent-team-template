@@ -1,0 +1,14 @@
+# frontend agent's own pipeline. Owned by agent/frontend.
+name: frontend
+on:
+  push:
+    branches: [agent/frontend]
+  pull_request:
+    paths: ['frontend/**', '.github/workflows/frontend.yml']
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: make -C frontend lint test build
+
