@@ -1,0 +1,27 @@
+# Orchestrator-owned integration + CD pipeline for main.
+name: integration
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: make check
+      - run: '[ ! -f tests/Makefile ] || make -C tests e2e'
+
+  deploy:
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: production # add required reviewers in GitHub > Settings > Environments
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: '[ ! -f infra/Makefile ] || make -C infra deploy'

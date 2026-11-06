@@ -1,0 +1,7 @@
+# Single source of truth for the agent team. Read by .claude/hooks/agent.sh and the root Makefile.
+# branch          role          owned path prefixes (first one = role dir, holds its CLAUDE.md, STATUS.md, skills)
+main              orchestrator  orchestrator/ CLAUDE.md README.md Makefile .gitignore .claude/ .github/workflows/ci.yml
+agent/backend     backend       backend/ .github/workflows/backend.yml
+agent/frontend    frontend      frontend/ .github/workflows/frontend.yml
+agent/infra       infra         infra/ .github/workflows/infra.yml
+agent/qa          qa            tests/ .github/workflows/qa.yml
