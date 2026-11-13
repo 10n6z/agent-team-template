@@ -10,5 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - run: rustup toolchain install 1.100 --profile minimal -c clippy,rustfmt && rustup default 1.100
       - run: make -C tests lint test build
 
