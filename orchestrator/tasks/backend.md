@@ -1,5 +1,5 @@
 # Task: backend — walking skeleton health service
-Status: assigned        <!-- assigned | in-progress | done -->
+Status: done            <!-- assigned | in-progress | done -->
 
 ## Goal
 Smallest real Rust backend that satisfies the contract, plus a real pipeline.

@@ -1,5 +1,5 @@
 # Task: frontend — walking skeleton status page
-Status: assigned        <!-- assigned | in-progress | done -->
+Status: done            <!-- assigned | in-progress | done -->
 
 ## Goal
 Smallest server-rendered Rust frontend that shows the backend's health, plus a real pipeline.
