@@ -1,0 +1,14 @@
+# infra agent's own pipeline. Owned by agent/infra.
+name: infra
+on:
+  push:
+    branches: [agent/infra]
+  pull_request:
+    paths: ['infra/**', '.github/workflows/infra.yml']
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: make -C infra lint test build
+      - run: make -C infra plan
