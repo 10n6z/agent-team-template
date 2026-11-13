@@ -8,5 +8,5 @@ test:
 build:
 	cargo build --release
 e2e:
-	cargo test -- --ignored
+	cargo test --no-fail-fast -- --ignored
 check: lint test
