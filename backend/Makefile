@@ -1,6 +1,11 @@
-# Replace the TODO echoes with real commands for your stack.
-.PHONY: lint test build check
-lint:  ; @echo "backend lint: TODO"
-test:  ; @echo "backend test: TODO"
-build: ; @echo "backend build: TODO"
+.PHONY: lint test build check run
+lint:
+	cargo fmt --check
+	cargo clippy --all-targets -- -D warnings
+test:
+	cargo test
+build:
+	cargo build --release
 check: lint test
+run:
+	cargo run --release
