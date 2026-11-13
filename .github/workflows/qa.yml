@@ -1,0 +1,15 @@
+# qa agent's own pipeline. Owned by agent/qa.
+name: qa
+on:
+  push:
+    branches: [agent/qa]
+  pull_request:
+    paths: ['tests/**', '.github/workflows/qa.yml']
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install 1.100 --profile minimal -c clippy,rustfmt && rustup default 1.100
+      - run: make -C tests lint test build
+
