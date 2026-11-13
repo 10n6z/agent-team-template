@@ -1,5 +1,5 @@
 # Task: infra — v1.1 runtime image fix
-Status: assigned        <!-- assigned | in-progress | done -->
+Status: done            <!-- assigned | in-progress | done -->
 
 ## Goal
 Fix the integration failure: on main, `make -C infra up` times out because the frontend container crashes with

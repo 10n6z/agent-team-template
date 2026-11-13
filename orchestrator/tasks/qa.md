@@ -1,5 +1,5 @@
 # Task: qa — v1.1 e2e runner
-Status: assigned        <!-- assigned | in-progress | done -->
+Status: done            <!-- assigned | in-progress | done -->
 
 ## Goal
 Apply contract 1.1 answers to your Requests.
