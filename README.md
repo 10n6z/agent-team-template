@@ -1,50 +1,62 @@
-# Agent Team Template
+# agent-team-template
 
-**Repo:** https://github.com/10n6z/agent-team-template (private)
+One pinned GitHub issue as a shared board for the team's coding agents.
+Every agent posts there when it finishes something or needs something, and
+tags the teammate it needs by GitHub username. Each agent waits for its own
+tag, so work can hand off between people's agents without anyone sending a
+text. Works with any agent that can run a shell command — the board script
+only needs `bash` and the GitHub CLI (`gh`).
 
-One orchestrator plus four worker agents. Each one is a separate Claude Code session in its own git worktree and branch.
+Based on the setup described at
+[The Hackathon Agent Board](https://marvelous-relative-5de.notion.site/hack).
 
-| Branch | Agent | Owns | CI |
-|---|---|---|---|
-| `main` | orchestrator | `orchestrator/`, root config, `ci.yml` | `ci.yml`: all checks + e2e, deploy on push to main |
-| `agent/backend` | backend | `backend/` | `backend.yml` |
-| `agent/frontend` | frontend | `frontend/` | `frontend.yml` |
-| `agent/infra` | infra (CI/CD, deploy) | `infra/` | `infra.yml` |
-| `agent/qa` | qa | `tests/` | `qa.yml` |
+## Setup (about 5 minutes)
 
-`.claude/owners` is the single source of truth. To add or rename a role, edit it there.
+1. Open a new issue from the **Message board** issue template
+   (`.github/ISSUE_TEMPLATE/message-board.md`) and pin it.
+2. If it isn't issue #1, every teammate runs `export BOARD_ISSUE=<number>`
+   (put it in your shell profile so it sticks).
+3. Fill in your team's GitHub logins and the owner table in `AGENTS.md`.
+4. Every teammate runs `gh auth login` once, then `tools/board whoami` to
+   check it's wired up.
 
-## Start
-```bash
-make worktrees                                   # ../agent-team-template-{backend,frontend,infra,qa}
-claude                                           # here, on main = orchestrator
-cd ../agent-team-template-backend && claude      # one terminal per worker
+Claude Code picks the board up on its own through the hooks in
+`.claude/settings.json` — it checks for unread posts when a session starts
+and again on every prompt. Other agents should read `AGENTS.md` and run
+`tools/board unread` before each task (see AGENTS.md for the recommended
+loop).
+
+## Commands
+
+```
+tools/board post "[Sam's Claude] login page is done, @login2 the API route is ready"
+tools/board unread
+tools/board wait [--interval SECONDS] [--timeout SECONDS]
+tools/board read [-n N]
+tools/board whoami
 ```
 
-## Loop
-1. **Orchestrator** writes contracts (`orchestrator/CONTRACTS.md`) and tasks (`/dispatch <role> <goal>`) and commits them on main.
-2. **Worker** session starts. A hook injects its role, its role `CLAUDE.md`, and its task read live from `main`.
-3. The worker edits only its own dir, commits on its own branch, and runs `/finish-task`, which updates `<dir>/STATUS.md`.
-4. **Orchestrator** sees every STATUS.md at session start and runs `/integrate <role>`: scope check, review, `merge --no-ff`, `make check`.
-5. Workers run `git merge main` to pick up the others' work.
+## Requirements
 
-Owned paths don't overlap, so merges never conflict. Cross-agent needs go through **Requests** in STATUS.md, never through direct edits.
+- `bash`, `git`
+- GitHub CLI (`gh`), logged in (`gh auth login`)
+- Write access to this repo
 
-## Guardrails
-| What | How |
-|---|---|
-| Who am I / what's my task | `SessionStart` hook → `.claude/hooks/agent.sh start` |
-| Stay in your lane | `PreToolUse` hook blocks Edit/Write outside owned paths; `/integrate` re-checks the scope of the whole diff (catches shell writes) |
-| Don't finish red | `Stop` hook runs `make -C <dir> check` and sends failures back to the agent |
-| Nothing leaves the machine | `permissions.deny` on `git push`, `reset --hard`, `branch -D`, `worktree remove`; no remote configured |
-| Shared rules | root `CLAUDE.md`; role rules in `<dir>/CLAUDE.md`; role skills in `<dir>/.claude/skills/` |
+## FAQ
 
-## CI/CD
-- **Per agent** (`.github/workflows/<role>.yml`): runs on push to `agent/<role>` and on PRs touching its dir, using `make -C <dir> lint test build`.
-- **Integration** (`ci.yml`, main): `make check` + `make -C tests e2e` on PRs and pushes. A `deploy` job runs `make -C infra deploy` on push to main, gated by the `production` environment.
-- Every role `Makefile` has `TODO` echo targets. Replace them with your stack's real commands.
+**Will this hit GitHub's rate limit?** No. `tools/board wait` checks once
+every 30 seconds by default, and an idle check is one API call — about 120
+calls/hour per agent, against GitHub's 5,000/hour per logged-in account. If
+several agents share one GitHub account, slow it down with
+`tools/board wait --interval 60`.
 
-## Before the first push
-1. Create the remote and push `main` and the `agent/*` branches by hand (the agents can't push).
-2. Create the `production` environment with required reviewers.
-3. Optional: protect `main` so it only accepts PRs with green `integration`. The orchestrator then opens PRs instead of merging locally.
+**Can the repo be private?** Yes. Every teammate just needs repo access and
+their own `gh auth login`.
+
+**What if two agents need the same file?** The agent that needs it asks on
+the board and waits for the owner, or the team lead, to hand it off. Only
+the team lead moves work between people (see `AGENTS.md`).
+
+**Does it only work with Claude Code?** No. The script only needs `bash` and
+`gh`, so any agent that can run a shell command can use it. Claude Code gets
+the automatic hooks on top of that.

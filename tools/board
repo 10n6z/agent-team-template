@@ -1,0 +1,248 @@
+#!/usr/bin/env bash
+# tools/board — a shared "message board" for a team's coding agents, built on
+# one pinned GitHub issue. Wraps the GitHub CLI (gh) so any agent that can run
+# a shell command can post to the board, check what it missed, and wait for
+# its own tag. See AGENTS.md for the rules every agent is expected to follow.
+#
+# Usage:
+#   tools/board post "[Sam's Claude] login page is done, @priya-dev the API route is ready"
+#   tools/board read [-n N]
+#   tools/board unread
+#   tools/board wait [--interval SECONDS] [--timeout SECONDS]
+#   tools/board whoami
+#
+# Env vars:
+#   BOARD_ISSUE     Issue number for the board (default: 1)
+#   BOARD_REPO      owner/repo (default: derived from `git remote get-url origin`)
+#   BOARD_LOGIN     Override the detected GitHub login (mainly for testing)
+
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+tools/board — shared message board for this team's agents, on one pinned GitHub issue.
+
+Commands:
+  post "<text>"     Post to the board. Text must start with [<human>'s <agent>], e.g. [Sam's Claude].
+                     Reads from stdin if no argument is given.
+  read [-n N]        Show the last N posts (default 10).
+  unread              Show posts since your last check; flags any that tag you or @all.
+  wait [--interval S] [--timeout S]
+                      Block until someone else posts, then print it and exit 0.
+                      Default interval: 30s. Default timeout: 0 (never times out).
+  whoami              Print your GitHub login (sanity-checks `gh auth login`).
+
+Env vars:
+  BOARD_ISSUE   Issue number for the board (default: 1)
+  BOARD_REPO    owner/repo (default: derived from the git remote "origin")
+  BOARD_LOGIN   Override the detected GitHub login (mainly for testing)
+EOF
+}
+
+die() { echo "tools/board: $*" >&2; exit 1; }
+
+need_gh() {
+  command -v gh >/dev/null 2>&1 || die "gh (GitHub CLI) not found on PATH. Install it, then run 'gh auth login'."
+}
+
+repo_root() {
+  git rev-parse --show-toplevel 2>/dev/null || pwd
+}
+
+state_dir() {
+  local root
+  root="$(repo_root)"
+  mkdir -p "$root/.board"
+  echo "$root/.board"
+}
+
+resolve_repo() {
+  if [ -n "${BOARD_REPO:-}" ]; then
+    echo "$BOARD_REPO"
+    return
+  fi
+  local cache="$(state_dir)/repo"
+  if [ -s "$cache" ]; then
+    cat "$cache"
+    return
+  fi
+  local url slug
+  url="$(git remote get-url origin 2>/dev/null)" || die "no git remote 'origin' and BOARD_REPO is not set."
+  # Accept https://github.com/owner/repo(.git), git@github.com:owner/repo(.git), ssh://git@github.com/owner/repo
+  slug="$(echo "$url" \
+    | sed -E 's#^(https?://[^/]+/|git@[^:]+:|ssh://git@[^/]+/)##' \
+    | sed -E 's#\.git/?$##')"
+  echo "$slug" | grep -Eq '^[^/]+/[^/]+$' || die "could not parse owner/repo from remote '$url'. Set BOARD_REPO=owner/repo."
+  # Verify against GitHub's canonical name (handles renames/redirects).
+  local canonical
+  if canonical="$(gh api "repos/$slug" --jq .full_name 2>/dev/null)"; then
+    echo "$canonical" > "$cache"
+    echo "$canonical"
+  else
+    echo "$slug" > "$cache"
+    echo "$slug"
+  fi
+}
+
+resolve_login() {
+  if [ -n "${BOARD_LOGIN:-}" ]; then
+    echo "$BOARD_LOGIN"
+    return
+  fi
+  local cache="$(state_dir)/login"
+  if [ -s "$cache" ]; then
+    cat "$cache"
+    return
+  fi
+  local login
+  login="$(gh api user --jq .login 2>/dev/null)" || die "gh is not authenticated. Run 'gh auth login'."
+  echo "$login" > "$cache"
+  echo "$login"
+}
+
+board_issue() { echo "${BOARD_ISSUE:-1}"; }
+
+cursor_file() {
+  local repo issue
+  repo="$(resolve_repo)"
+  issue="$(board_issue)"
+  echo "$(state_dir)/cursor-$(echo "$repo" | tr '/' '_')-$issue"
+}
+
+mentions_me() {
+  # $1 = comment body, $2 = my login. Matches @login or @all, case-insensitive, word-bounded.
+  local body="$1" login="$2"
+  echo "$body" | grep -Eiq "(^|[^A-Za-z0-9_-])@(${login}|all)([^A-Za-z0-9_-]|\$)"
+}
+
+cmd_whoami() {
+  need_gh
+  resolve_login
+}
+
+cmd_post() {
+  need_gh
+  local text="${1:-}"
+  if [ -z "$text" ]; then
+    text="$(cat)"
+  fi
+  [ -n "$text" ] || die "post text is empty."
+  echo "$text" | grep -Eq "^\[.+'s .+\]" || \
+    die "post must start with [<human>'s <agent>], e.g. [Sam's Claude] ..."
+  local repo issue
+  repo="$(resolve_repo)"
+  issue="$(board_issue)"
+  gh api "repos/$repo/issues/$issue/comments" -f body="$text" --jq .html_url
+}
+
+cmd_read() {
+  need_gh
+  local n=10
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -n) n="$2"; shift 2 ;;
+      -n*) n="${1#-n}"; shift ;;
+      *) shift ;;
+    esac
+  done
+  local repo issue total page_size start_page my_login
+  repo="$(resolve_repo)"; issue="$(board_issue)"; my_login="$(resolve_login)"
+  total="$(gh api "repos/$repo/issues/$issue" --jq .comments)"
+  page_size=100
+  start_page=$(( (total - 1) / page_size + 1 ))
+  if [ "$start_page" -lt 1 ]; then start_page=1; fi
+  gh api --paginate "repos/$repo/issues/$issue/comments?per_page=$page_size&page=$start_page" \
+    --jq '.[] | [.user.login, .created_at, .id, .body] | @tsv' \
+    | tail -n "$n" \
+    | while IFS=$'\t' read -r user created id body; do
+        printf -- '--- %s · %s · comment %s\n%s\n' "$user" "$created" "$id" "$body"
+        if mentions_me "$body" "$my_login"; then
+          echo "** MENTION **"
+        fi
+        echo
+      done
+}
+
+cmd_unread() {
+  need_gh
+  local repo issue my_login cf since newest
+  repo="$(resolve_repo)"; issue="$(board_issue)"; my_login="$(resolve_login)"
+  cf="$(cursor_file)"
+
+  if [ ! -s "$cf" ]; then
+    echo "(first run — showing the last 10 posts for context)"
+    cmd_read -n 10
+    newest="$(gh api "repos/$repo/issues/$issue/comments?per_page=1&page=$(( ($(gh api "repos/$repo/issues/$issue" --jq .comments) - 1) / 100 + 1 ))" \
+      --jq '[.[].created_at] | sort | last // empty')"
+    [ -n "$newest" ] && echo "0 $newest" > "$cf"
+    return
+  fi
+
+  since="$(awk '{print $2}' "$cf")"
+  local rows
+  if ! rows="$(gh api --paginate "repos/$repo/issues/$issue/comments?per_page=100&since=$since" \
+      --jq '.[] | [.user.login, .created_at, .id, .body] | @tsv' 2>/dev/null)"; then
+    echo "could not reach GitHub (cursor unchanged)" >&2
+    return 1
+  fi
+
+  [ -z "$rows" ] && return 0
+
+  local newest_seen="$since" printed=0
+  while IFS=$'\t' read -r user created id body; do
+    [ "$user" = "$my_login" ] && continue
+    printf -- '--- %s · %s · comment %s\n%s\n' "$user" "$created" "$id" "$body"
+    if mentions_me "$body" "$my_login"; then
+      echo "** MENTION **"
+    fi
+    echo
+    printed=1
+    if [[ "$created" > "$newest_seen" ]]; then newest_seen="$created"; fi
+  done <<< "$rows"
+
+  echo "$(($(cat "$cf" | awk '{print $1}') + 1)) $newest_seen" > "$cf"
+  [ "$printed" = "1" ]
+}
+
+cmd_wait() {
+  need_gh
+  local interval=30 timeout=0 elapsed=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --interval) interval="$2"; shift 2 ;;
+      --timeout) timeout="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  while true; do
+    if out="$(cmd_unread 2>/tmp/board-wait-err)"; then
+      if [ -n "$out" ]; then
+        echo "$out"
+        return 0
+      fi
+    fi
+    if [ "$timeout" != "0" ] && [ "$elapsed" -ge "$timeout" ]; then
+      echo "wait timed out after ${timeout}s"
+      return 124
+    fi
+    sleep "$interval"
+    elapsed=$((elapsed + interval))
+  done
+}
+
+main() {
+  local cmd="${1:-}"
+  [ -n "$cmd" ] || { usage; exit 1; }
+  shift || true
+  case "$cmd" in
+    post) cmd_post "$@" ;;
+    read) cmd_read "$@" ;;
+    unread) cmd_unread "$@" ;;
+    wait) cmd_wait "$@" ;;
+    whoami) cmd_whoami "$@" ;;
+    -h|--help|help) usage ;;
+    *) usage; exit 1 ;;
+  esac
+}
+
+main "$@"
