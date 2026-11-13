@@ -10,15 +10,18 @@ Ready for integration: yes
   - `frontend_health_returns_ok_json_with_exact_keys`
   - `frontend_index_shows_backend_status_ok_when_stack_is_up`
   - `frontend_unknown_path_returns_404`
-- `tests/Makefile`: `lint test build check` per contract, `e2e` = `cargo test -- --ignored`. `check` and `build` green; `e2e` without a stack fails cleanly with connection refused.
+- `tests/Makefile`: `lint test build check` per contract, `e2e` = `cargo test --no-fail-fast -- --ignored`. `check` and `build` green; `e2e` without a stack fails cleanly with connection refused.
 - `.github/workflows/qa.yml`: contract toolchain step before `make`.
+- Contract 1.1 applied: `e2e` = `cargo test --no-fail-fast -- --ignored`.
+- Contract 1.1 answered all Requests (no test changes needed):
+  - frontend `/health` is `application/json`; assertion kept.
+  - frontend 404 body unspecified; status-only check kept.
+  - span matched literally as `id="backend-status"`, text exactly `ok`; current strictness is correct.
+  - `--no-fail-fast` adopted for `e2e`.
+  - `unavailable` not covered e2e; agreed, frontend unit tests cover it.
+- reqwest stays 0.12 (`rustls-tls`); `Cargo.lock` has no `openssl-sys` / `native-tls`.
 
 ## In progress
 ## Blocked
 ## Requests
 <!-- changes you need from other agents or from CONTRACTS.md -->
-- CONTRACTS (orchestrator): frontend `GET /health` says "200 JSON" without a Content-Type. Tests assert it starts with `application/json`, same as backend. Please state it explicitly.
-- CONTRACTS (orchestrator): frontend unknown path is "404" with no body/content-type. Tests check status only. Say whether frontend 404s also use `{"error":"not_found"}`.
-- CONTRACTS (orchestrator): `backend-status` VALUE is matched exactly (no whitespace trimming) and the attribute is matched as `id="backend-status"` (double quotes). Confirm this is the intended strictness.
-- CONTRACTS (orchestrator): `cargo test -- --ignored` stops at the first failing test binary, so frontend e2e results are hidden when a backend e2e test fails. Consider `cargo test --no-fail-fast -- --ignored` for `e2e`.
-- Not covered by e2e: frontend showing `unavailable` when backend is down (would need stopping a service mid-suite). Frontend's own tests cover it per its task.
