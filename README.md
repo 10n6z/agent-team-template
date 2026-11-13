@@ -1,5 +1,7 @@
 # Agent Team Template
 
+**Repo:** https://github.com/10n6z/agent-team-template (private)
+
 One orchestrator plus four worker agents. Each one is a separate Claude Code session in its own git worktree and branch.
 
 | Branch | Agent | Owns | CI |
