@@ -1,0 +1,15 @@
+# backend agent's own pipeline. Owned by agent/backend.
+name: backend
+on:
+  push:
+    branches: [agent/backend]
+  pull_request:
+    paths: ['backend/**', '.github/workflows/backend.yml']
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install 1.100 --profile minimal -c clippy,rustfmt && rustup default 1.100
+      - run: make -C backend lint test build
+
