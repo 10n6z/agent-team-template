@@ -14,11 +14,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - run: rustup toolchain install 1.100 --profile minimal -c clippy,rustfmt && rustup default 1.100
       - run: make check
-      - run: '[ ! -f tests/Makefile ] || make -C tests e2e'
+
+  e2e:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install 1.100 --profile minimal -c clippy,rustfmt && rustup default 1.100
+      - run: '[ ! -f infra/Makefile ] || make -C infra up'
+      - run: '[ ! -f tests/Makefile ] || [ ! -f infra/Makefile ] || make -C tests e2e'
+      - if: always()
+        run: '[ ! -f infra/Makefile ] || make -C infra down'
 
   deploy:
-    needs: check
+    needs: e2e
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment: production # add required reviewers in GitHub > Settings > Environments
     runs-on: ubuntu-latest
